@@ -1,0 +1,125 @@
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  min_version: 2024.8.0
+  project:
+    name: "${project_name}"
+    version: "${project_version}"  
+  platformio_options:
+    upload_speed: 921600
+    build_unflags: -Werror=all
+    board_build.flash_mode: dio
+    board_build.f_flash: 80000000L
+    board_build.f_cpu: 240000000L
+
+external_components:
+  #- source: github://buglloc/esphome-components
+  #- source:  github://Garag/esphome-components
+  - source:  github://clowrey/esphome-components
+    components: [axs15231]
+    refresh: 10min
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+psram:
+  mode: octal
+  speed: 120MHz
+
+#-------------------------------------------
+# Internal outputs
+#-------------------------------------------
+
+output:
+    # Backlight LED 
+  - platform: ledc
+    pin: GPIO01
+    id: GPIO01
+    frequency: 100Hz
+    
+    # Built in 240v relay
+  - id: internal_relay_1
+    platform: gpio
+    pin: 13
+    
+light:
+  - platform: monochromatic
+    output: GPIO01
+    name: Display Backlight
+    id: display_backlight
+    restore_mode: ALWAYS_ON
+
+#-------------------------------------------
+# Display axs15231 qspi
+#-------------------------------------------
+ 
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: 47
+  data_pins: [21, 48, 40, 39]
+
+i2c:
+  sda: 4
+  scl: 8
+  id: touchscreen_bus
+
+globals:
+  - id: bgcolor
+    type: Color
+    initial_value: "Color::random_color()"
+
+display:
+  - platform: axs15231
+    data_rate: 40MHz #20mhz is default
+    #spi_mode: MODE2
+    id: my_display
+    spi_id: display_qspi
+    dimensions:
+      height: 480
+      width: 320
+    cs_pin: 45
+    backlight_pin: 1
+    brightness: 50
+    transform:
+      swap_xy: false
+    rotation: 90
+    auto_clear_enabled: false
+    lambda: |-
+      it.fill(id(bgcolor));
+      it.print(it.get_width()/2, it.get_height()/2-20, id(font_title), TextAlign::CENTER, "ESPHome");
+      it.print(it.get_width()/2, it.get_height()/2+20, id(font_std), TextAlign::CENTER, "@UTBDK");
+
+#-------------------------------------------
+# Touchscreen axs15231 spi
+#-------------------------------------------
+
+touchscreen:
+  platform: axs15231
+  id: my_touchscreen
+  display: my_display
+  i2c_id: touchscreen_bus
+  transform:
+    swap_xy: true
+  on_touch:
+    - lambda: |-
+        Color newColor;
+        do { newColor =  Color::random_color(); } while (newColor == id(bgcolor));
+        id(bgcolor) = newColor;
+
+        ESP_LOGI("cal", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+          touch.x,
+          touch.y,
+          touch.x_raw,
+          touch.y_raw
+        );
+
